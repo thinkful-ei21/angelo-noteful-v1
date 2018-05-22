@@ -6,30 +6,86 @@ const app = express();
 
 const data = require('./db/notes');
 
+const simDB = require('./db/simDB');
+
+const notes = simDB.initialize(data);
+
 const {PORT} = require('./config');
 
 const {logRequests} = require('./middleware/logger');
 
-app.use(express.static('public'));
-
 app.use(logRequests);
 
-app.get('/api/notes', (req, res) => {
-    let query = req.query.searchTerm;
-    // console.log(query);
+app.use(express.static('public'));
 
-    const searched = data.filter(function(item) {
-        return item.title.includes(query) || item.content.includes(query);
+app.use(express.json());
+
+app.get('/api/notes', (req, res, next) => {
+    const { searchTerm } = req.query;
+    notes.filter(searchTerm, (err, list) => {
+        if (err) {
+            return next(err);
+        }
+        res.json(list);
     });
-
-    res.json(query ? searched : data);
 });
 
-app.get('/api/notes/:id', (req, res) => {
-    let note = data.find(function(note){
-        return note.id == req.params.id;
+app.get('/api/notes/:id', (req, res, next) => {
+    const id = req.params.id;
+    notes.find(id, (err, item) => {
+        if (err) {
+            next(err);
+        }
+        if (item) {
+            res.json(item);
+        } else {
+            console.log('not found')
+        }
     });
-    res.json(note);
+});
+
+app.put('/api/notes/:id', (req, res, next) => {
+    const id = req.params.id;
+
+    /**** never trust users - validate info */
+    const updateObj = {};
+    const updateFields = ['title', 'content'];
+
+    updateFields.forEach(field => {
+        if (field in req.body) {
+            updateObj[field] = req.body[field];
+        }
+    });
+
+    notes.update(id, updateObj, (err, item) => {
+        if (err) {
+            return next(err);
+        }
+        if (item) {
+            res.json(item);
+        } else {
+            next();
+        }
+    });
+});
+
+app.get('/boom', (req, res, next) => {
+    throw new Error('Boom!');
+});
+
+
+app.use(function(err, req, res, next) {
+    res.status(err.status || 500);
+    res.json({
+        message: err.message,
+        error: err
+    });
+});
+
+app.use(function(req, res, next) {
+    var err = new Error('Not found');
+    err.status = 404;
+    res.status(404).json({message: 'Not found'});
 });
 
 app.listen(PORT, function() {
